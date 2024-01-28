@@ -1,67 +1,93 @@
 pipeline {
-    
-    agent any 
-    
+    agent { label 'ubuntu'}
+
     environment {
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        GIT_CREDENTIALS = credentials('GitHub')
+        GIT_PAT_CREDENTIALS_ID = credentials('GitHub-PAT')
+        REPO_URL = 'https://github.com/DevOps-Realtime/Project2.git'
+        // Variables to store the retrieved credentials
+        MY_CREDENTIALS = credentials('GitHub')
+        MY_USERNAME = "MY_CREDENTIALS_USRPASS.username"
+        MY_PASSWORD = "MY_CREDENTIALS_USRPASS.password"
+
+        SCANNER_HOME=tool 'sonarqube-scanner'
     }
     
     stages {
-        
-        stage('Checkout'){
-           steps {
-                git credentialsId: 'f87a34a8-0e09-45e7-b9cf-6dc68feac670', 
-                url: 'https://github.com/iam-veeramalla/cicd-end-to-end',
-                branch: 'main'
-           }
-        }
-
-        stage('Build Docker'){
-            steps{
-                script{
-                    sh '''
-                    echo 'Buid Docker Image'
-                    docker build -t abhishekf5/cicd-e2e:${BUILD_NUMBER} .
-                    '''
-                }
-            }
-        }
-
-        stage('Push the artifacts'){
-           steps{
-                script{
-                    sh '''
-                    echo 'Push to Repo'
-                    docker push abhishekf5/cicd-e2e:${BUILD_NUMBER}
-                    '''
-                }
-            }
-        }
-        
-        stage('Checkout K8S manifest SCM'){
+        stage('Clean Workspace') {
             steps {
-                git credentialsId: 'f87a34a8-0e09-45e7-b9cf-6dc68feac670', 
-                url: 'https://github.com/iam-veeramalla/cicd-demo-manifests-repo.git',
-                branch: 'main'
+                // Cleaning the Workspace
+                cleanWs()
             }
         }
-        
-        stage('Update K8S manifest & push to Repo'){
+        stage('Cloning Source Code') {
             steps {
-                script{
-                    withCredentials([usernamePassword(credentialsId: 'f87a34a8-0e09-45e7-b9cf-6dc68feac670', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-                        sh '''
-                        cat deploy.yaml
-                        sed -i '' "s/32/${BUILD_NUMBER}/g" deploy.yaml
-                        cat deploy.yaml
-                        git add deploy.yaml
-                        git commit -m 'Updated the deploy yaml | Jenkins Pipeline'
-                        git remote -v
-                        git push https://github.com/iam-veeramalla/cicd-demo-manifests-repo.git HEAD:main
-                        '''                        
-                    }
+                // Checkout the branch automatically detected by Jenkins
+                script {
+                    def branchName = env.BRANCH_NAME
+                    // Use 'env.CHANGE_BRANCH' to get the branch dynamically
+                    echo "Current Git branch: ${branchName}"
+                    // git url:'https://github.com/DevOps-Realtime/Project2.git', branches: [[name: branchName]], credentialsId: '$(GIT_CREDENTIALS)'
+
+                    // Use the withCredentials block to securely retrieve the credentials
+                    // withCredentials([usernamePassword(credentialsId: GIT_CREDENTIALS, usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                    //     echo "${GIT_USERNAME}"
+                    //     echo "${GIT_PASSWORD}"
+                    //     // Use the retrieved credentials in the GitSCM checkout
+                    //     //checkout([$class: 'GitSCM', branches: [[name: branchName]], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: ${GIT_CREDENTIALS}, url: 'https://$(GIT_PASSWORD)@github.com/DevOps-Realtime/Project2.git']]])
+                    //     // checkout([$class: 'GitSCM', branches: [name: branchName]], userRemoteConfigs: [[url: 'https://${GIT_USERNAME}:$(GIT_PASSWORD)@github.com/DevOps-Realtime/Project2.git']])
+                    //     // Use the retrieved token in the GitSCM checkout
+                    //     checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: REPO_URL.replace("https://", "https://$GIT_PASSWORD@"), credentialsId: GIT_CREDENTIALS]]])
+                     // Use the withCredentials block to securely pass the PAT.
+                    // withCredentials([string(credentialsId: GIT_PAT_CREDENTIALS_ID, variable: 'GIT_PAT')]) {
+                    //     // Use the retrieved token in the GitSCM checkout
+                    //     checkout([$class: 'GitSCM', branches: [[name: branchName]], userRemoteConfigs: [[url: REPO_URL.replace("https://", "https://$GIT_PAT@"), credentialsId: GIT_PAT_CREDENTIALS_ID]]])
+                    // }
+                    git url:'https://github.com/saikirangude/Git-repo2.git', branches: [name: branchName], credentialsId: 'GitHub'
+                    // git url:'https://github.com/DevOps-Realtime/Jenkins-Zero-To-Hero_-_Shared_Lib.git', branche: [name: branchName], credentialsId: 'GitHub'
+                    // git branche: ${branchName}, url:'https://github.com/DevOps-Realtime/Jenkins-Zero-To-Hero_-_Shared_Lib.git', credentialsId: 'GitHub'
                 }
+            }
+        }
+        stage ("Code Build") {
+            steps {
+                sh 'cd $WORKSPACE && mvn clean package'
             }
         }
     }
+    //    stage("Sonarqube Analysis "){
+    //        steps{
+    //            withSonarQubeEnv('sonarqube-server') {
+    //                sh ''' $SCANNER_HOME/bin/sonarqube-scanner -Dsonar.projectName=petadata_project-2 \
+    //                -Dsonar.projectKey=SP2 '''
+    //            }
+    //        }
+    //    }
+        post {
+        // success {
+        //     echo 'Build succeeded! Adding post-success steps...'
+        //      // Add your post-success steps here
+        // }
+        // failure {
+        //     echo 'Build failed! Adding post-failure steps...'
+        //     // Add your post-failure steps here
+        // }
+            always {
+            // Email notification configuration with console output attachment
+                emailext {
+                    subject: "Pipeline Status: ${currentBuild.result}",
+                    body: """<html>
+                                <body>
+                                    <p>Build Status: ${currentBuild.result}</P>
+                                    <p>Build Number: ${currentBuild.Number}</P>
+                                    <p>Check the <a href-"${env.BUILD_URL}">console output</a>/</p>
+                                </body>
+                             </html> """,
+                    to: 'saikirangude@gmail.com',
+                    from: 'sk1570543@gmail.com',
+                    replyTo: 'saikirangude@gmail.com',
+                    mimeType: 'text/html'
+                    }
+                }
+        }
 }
